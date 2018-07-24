@@ -65,7 +65,7 @@ static bErrType assignBuf(bAdrType adr, bufType **b) {
     bufType *buf;
     bErrType rc;
 
-    if (adr == 0) {
+    if (adr == 0) { // 如果是根节点
         *b = &h->root;
         return bErrOk;
     }
@@ -112,9 +112,11 @@ static bErrType readDisk(bAdrType adr, bufType **b) {
     if ((rc = assignBuf(adr, &buf)) != 0) return rc;
     if (!buf->valid) {
         len = h->sectorSize;
-        if (adr == 0) len *= 3;
-        if (fseek(h->fp, adr, SEEK_SET)) return error(bErrIO);
-        if (fread(buf->p, len, 1, h->fp) != 1) return error(bErrIO);
+        if (adr == 0) len *= 3; // 如果是根节点, 读取3个扇区
+        if (fseek(h->fp, adr, SEEK_SET))
+            return error(bErrIO);
+        if (fread(buf->p, len, 1, h->fp) != 1)
+            return error(bErrIO);
         buf->modified = false;
         buf->valid = true;
         nDiskReads++;
@@ -382,7 +384,9 @@ bErrType bOpen(bOpenType info, bHandleType *handle) {
 
 
     h->ks = sizeof(bAdrType) + h->keySize + sizeof(eAdrType);
-    h->maxCt = maxCt;
+    h->maxCt = maxCt; // 一个节点能容纳的key
+
+    // 申请缓存区(默认7个)
 
     bufCt = 7;
     if ((h->malloc1 = malloc(bufCt * sizeof(bufType))) == NULL)
@@ -416,10 +420,13 @@ bErrType bOpen(bOpenType info, bHandleType *handle) {
     h->curBuf = NULL;
     h->curKey = NULL;
 
-    if ((h->fp = fopen(info.iName, "r+b")) != NULL) {
-        if ((rc = readDisk(0, &root)) != 0) return rc;
-        if (fseek(h->fp, 0, SEEK_END)) return error(bErrIO);
-        if ((h->nextFreeAdr = ftell(h->fp)) == -1) return error(bErrIO);
+    if ((h->fp = fopen(info.iName, "r+b")) != NULL) { // 如果btree已经存在
+        if ((rc = readDisk(0, &root)) != 0)
+            return rc;
+        if (fseek(h->fp, 0, SEEK_END))
+            return error(bErrIO);
+        if ((h->nextFreeAdr = ftell(h->fp)) == -1)
+            return error(bErrIO);
     } else if ((h->fp = fopen(info.iName, "w+b")) != NULL) {
         memset(root->p, 0, 3*h->sectorSize);
         leaf(root) = 1;
@@ -511,8 +518,10 @@ bErrType bInsertKey(bHandleType handle, void *key, eAdrType rec) {
     lastLTvalid = false;
 
     if (ct(root) == 3 * h->maxCt) {
-        if ((rc = gatherRoot()) != 0) return rc;
-        if ((rc = scatter(root, fkey(root), 0, tmp)) != 0) return rc;
+        if ((rc = gatherRoot()) != 0)
+            return rc;
+        if ((rc = scatter(root, fkey(root), 0, tmp)) != 0)
+            return rc;
     }
     buf = root;
     height = 0;
