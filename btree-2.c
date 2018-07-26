@@ -83,7 +83,9 @@ btree_t* btree_delete(btree_t *btree, type_t key)
         memmove(&btree->key[index],
                 &btree->key[index + 1],
                 sizeof(type_t) * (btree->num - index - 1));
+
         --btree->num;
+
         return btree;
 
     } else if (btree->leaf && ret) {
@@ -91,15 +93,17 @@ btree_t* btree_delete(btree_t *btree, type_t key)
         return btree;
     }
 
-    if (!ret)               /* btree includes key */
-    {
+    // 如果找到并且不是在叶子节点中
+
+    if (!ret) {
         /*
            case 2:
            If the key k is in node x and x is an internal node, do the following:
          */
-        preceding = btree->child[index];
-        successor = btree->child[index + 1];
+        preceding = btree->child[index];     // 对应索引的左子树
+        successor = btree->child[index + 1]; // 对应索引的右子树
 
+        // 如果左子树有足够的key可以替换删除的key
         if (preceding->num >= M) /* case 2a */
         {
             /*
@@ -109,11 +113,14 @@ btree_t* btree_delete(btree_t *btree, type_t key)
                Recursively delete k′, and replace k by k′ in x.
                (Finding k′ and deleting it can be performed in a single downward pass.)
              */
+            // 把左子树最后一个key替换被删除的key
             replace = preceding->key[preceding->num - 1];
             btree->child[index] = btree_delete(preceding, replace);
             btree->key[index] = replace;
             return btree;
         }
+
+        // 如果右子树有足够的key
         if (successor->num >= M)  /* case 2b */
         {
             /*
@@ -129,6 +136,8 @@ btree_t* btree_delete(btree_t *btree, type_t key)
             btree->key[index] = replace;
             return btree;
         }
+
+        // 如果左子树和右子树能够合并成为一个新节点
         if ((preceding->num == M - 1) && (successor->num == M - 1)) /* case 2c */
         {
             /*
@@ -140,26 +149,38 @@ btree_t* btree_delete(btree_t *btree, type_t key)
              */
             /* merge key and successor into preceding */
             preceding->key[preceding->num++] = key;
-            memmove(&preceding->key[preceding->num], &successor->key[0], sizeof(type_t) * (successor->num));
-            memmove(&preceding->child[preceding->num], &successor->child[0], sizeof(btree_t*) * (successor->num + 1));
+
+            memmove(&preceding->key[preceding->num],
+                    &successor->key[0],
+                    sizeof(type_t) * (successor->num));
+
+            memmove(&preceding->child[preceding->num],
+                    &successor->child[0],
+                    sizeof(btree_t*) * (successor->num + 1));
+
             preceding->num += successor->num;
 
             /* delete key from btree */
             if (btree->num - 1 > 0)
             {
-                memmove(&btree->key[index], &btree->key[index + 1], sizeof(type_t) * (btree->num - index - 1));
-                memmove(&btree->child[index + 1], &btree->child[index + 2], sizeof(btree_t*) * (btree->num - index - 1));
+                memmove(&btree->key[index],
+                        &btree->key[index + 1],
+                        sizeof(type_t) * (btree->num - index - 1));
+
+                memmove(&btree->child[index + 1],
+                        &btree->child[index + 2],
+                        sizeof(btree_t*) * (btree->num - index - 1));
+
                 --btree->num;
-            }
-            else
-            {
+
+            } else { // 如果父节点没有key, 删除父节点
                 /* if the parent node contain no more child, free it */
                 free(btree);
                 btree = preceding;
             }
 
             /* free successor */
-            free(successor);
+            free(successor); // 因为合并了左右节点, 所以需要释放右节点
 
             /* delete key from preceding */
             btree_delete(preceding, key);
@@ -169,8 +190,8 @@ btree_t* btree_delete(btree_t *btree, type_t key)
     }
 
     /* btree not includes key */
-    if ((child = btree->child[index]) && child->num == M - 1)
-    {
+    // 如果key不存在于当前节点
+    if ((child = btree->child[index]) && child->num == M - 1) {
         /*
            case 3:
            If the key k is not present in internal node x, determine
@@ -188,24 +209,28 @@ btree_t* btree_delete(btree_t *btree, type_t key)
            left or right sibling up into x, and moving the appropriate
            child pointer from the sibling into ci[x].
          */
+        // 如果右兄弟节点有足够的key, 那么从右兄弟节点借用一个key
         if ((index < btree->num) &&
             (sibling = btree->child[index + 1]) &&
             (sibling->num >= M))
         {
             /* the right sibling has at least M keys */
             child->key[child->num++] = btree->key[index];
-            btree->key[index]        = sibling->key[0];
+            btree->key[index] = sibling->key[0];
 
             child->child[child->num] = sibling->child[0];
 
             sibling->num--;
+
             memmove(&sibling->key[0],
                     &sibling->key[1],
                     sizeof(type_t*) * (sibling->num));
+
             memmove(&sibling->child[0],
                     &sibling->child[1],
                     sizeof(btree_t*) * (sibling->num + 1));
         }
+        // 如果左兄弟节点有足够的key, 那么从左兄弟节点借一个key使用
         else if ((index > 0) &&
                 (sibling = btree->child[index - 1]) &&
                 (sibling->num >= M))
@@ -214,11 +239,13 @@ btree_t* btree_delete(btree_t *btree, type_t key)
             memmove(&child->key[1],
                     &child->key[0],
                     sizeof(type_t) * child->num);
+
             memmove(&child->child[1],
                     &child->child[0],
                     sizeof(btree_t*) * (child->num + 1));
+
             child->key[0] = btree->key[index - 1];
-            btree->key[index - 1]  = sibling->key[sibling->num - 1];
+            btree->key[index - 1] = sibling->key[sibling->num - 1];
             child->child[0] = sibling->child[sibling->num];
 
             child->num++;
@@ -239,26 +266,29 @@ btree_t* btree_delete(btree_t *btree, type_t key)
                so merge child with its right sibling
              */
             child->key[child->num++] = btree->key[index];
+
             memmove(&child->key[child->num],
                     &sibling->key[0],
                     sizeof(type_t) * sibling->num);
+
             memmove(&child->child[child->num],
                     &sibling->child[0],
                     sizeof(btree_t*) * (sibling->num + 1));
+
             child->num += sibling->num;
 
-            if (btree->num - 1 > 0)
-            {
+            if (btree->num - 1 > 0) {
                 memmove(&btree->key[index],
                         &btree->key[index + 1],
                         sizeof(type_t) * (btree->num - index - 1));
+
                 memmove(&btree->child[index + 1],
                         &btree->child[index + 2],
                         sizeof(btree_t*) * (btree->num - index - 1));
+
                 btree->num--;
-            }
-            else
-            {
+
+            } else {
                 free(btree);
                 btree = child;
             }
@@ -274,21 +304,26 @@ btree_t* btree_delete(btree_t *btree, type_t key)
                so merge child with its left sibling
              */
             sibling->key[sibling->num++] = btree->key[index - 1];
+
             memmove(&sibling->key[sibling->num],
                     &child->key[0],
                     sizeof(type_t) * child->num);
+
             memmove(&sibling->child[sibling->num],
                     &child->child[0],
                     sizeof(btree_t*) * (child->num + 1));
+
             sibling->num += child->num;
 
             if (btree->num - 1 > 0) {
                 memmove(&btree->key[index - 1],
                         &btree->key[index],
                         sizeof(type_t) * (btree->num - index));
+
                 memmove(&btree->child[index],
                         &btree->child[index + 1],
                         sizeof(btree_t*) * (btree->num - index));
+
                 btree->num--;
 
             } else {
@@ -302,7 +337,8 @@ btree_t* btree_delete(btree_t *btree, type_t key)
         }
     }
 
-    btree_delete(child, key);
+    btree_delete(child, key); // 递归从child中删除key
+
     return btree;
 }
 
